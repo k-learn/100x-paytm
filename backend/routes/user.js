@@ -1,13 +1,14 @@
 import express from 'express';
 import { z } from 'zod';
-import User from '../db.js';
+import { User } from '../db.js';
 import jwt from 'jsonwebtoken';
+import authMiddleware from '../middleware.js';
 import { JWT_SECRET } from '../config.js';
 
 const router = express.Router();
 
 const signupBody = z.object({
-    username: z.string().email().min(3).max(30),
+    username: z.string().email(),
     firstName: z.string().max(50),
     lastName: z.string().max(50),
     password: z.string().min(6),
@@ -50,7 +51,7 @@ const signinBody = z.object({
 });
 
 router.post("/signin", async (req, res) => {
-    const success = signinBody.safeParse(req.body);
+    const { success } = signinBody.safeParse(req.body);
     if (!success) {
         return res.status(411).json({ message: "Error while logging in" });
     }
@@ -70,6 +71,50 @@ router.post("/signin", async (req, res) => {
         token: token,
     });
 
+});
+
+const updateBody = z.object({
+    password: z.string().optional(),
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+});
+
+router.put("/", authMiddleware, async (req, res) => {
+    const { success } = updateBody.safeParse(req.body);
+    if (!success) {
+        return res.status(411).json({ message: "Error while updating information" });
+    }
+
+    await User.updateOne(req.body, { _id: req.userId });
+
+    return res.json({ message: "Updated successfully" });
+});
+
+router.get("/bulk", authMiddleware, async (req, res) => {
+    const query = req.query.filter;
+    
+    const data = await User.find({
+        $or: [{
+            firstName: {
+                "$regex": query,
+                "$options": 'i',
+            },
+        }, {
+            lastName: {
+                "$regex": query,
+                "$options": 'i',
+            },
+        }],
+    });
+
+    return res.json({
+        users: data.map(user => ({
+            username: user.username,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            _id: user._id,
+        })),
+    }); 
 });
 
 export default router;
